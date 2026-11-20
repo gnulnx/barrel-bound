@@ -18,6 +18,7 @@ let stage = 0,
   world,
   mode = 'lobby',
   loading = false,
+  launchId = 0,
   previousTime = 0,
   accum = 0,
   noticeTimer
@@ -85,7 +86,10 @@ function showDialog(html) {
     modal.showModal()
   }
   body.innerHTML = html
-  body.querySelector('button')?.focus({ preventScroll: true })
+  // Watching players must not land on End Game while still holding Jump.
+  body.tabIndex = -1
+  const target = body.querySelector('.primary') ?? body
+  target.focus({ preventScroll: true })
 }
 function closeDialog() {
   if (modal.open) modal.close()
@@ -96,6 +100,7 @@ function button(action, text, primary = false) {
   return `<button class="${primary ? 'primary' : 'modal-button'}" data-action="${action}">${text}</button>`
 }
 function help() {
+  if (loading) return
   helpReturn = mode
   if (mode === 'play') {
     pressed.clear()
@@ -143,7 +148,9 @@ function message(text, duration = 2300) {
 }
 async function start(index = stage, carry = {}) {
   if (loading) return
+  const request = ++launchId
   loading = true
+  mode = 'loading'
   $('menu-notice').textContent = ''
   closeDialog()
   initAudio()
@@ -151,6 +158,7 @@ async function start(index = stage, carry = {}) {
   $('start').disabled = true
   try {
     const { World } = await import('./world.js')
+    if (request !== launchId) return
     lobby.hidden = true
     game.hidden = false
     world ??= new World(viewport)
@@ -160,7 +168,9 @@ async function start(index = stage, carry = {}) {
     $('hud-stage-number').textContent = 'STAGE ' + pad(index + 1) + ' / ' + pad(levels.length)
     $('hud-stage-name').textContent = run.level.name
     $('game-keys').textContent =
-      count === 1 ? '← →  MOVE  ·  ↑ ↓  CLIMB  ·  SPACE  JUMP' : 'P1  ARROWS + SPACE   ·   P2  WASD + F'
+      count === 1
+        ? '← →  MOVE  ·  ↑ ↓  CLIMB  ·  SPACE  JUMP'
+        : 'P1  ARROWS + SPACE   ·   P2  WASD + F'
     $('objective').textContent = 'Reach the golden summit bell'
     lastScore = -1
     lastLives = ''
@@ -175,6 +185,7 @@ async function start(index = stage, carry = {}) {
     window.scrollTo(0, 0)
     message(run.level.hint, 3300)
   } catch (err) {
+    if (request !== launchId) return
     console.error('Unable to initialize the 3D playfield', err)
     lobby.hidden = false
     game.hidden = true
@@ -183,13 +194,16 @@ async function start(index = stage, carry = {}) {
       `<p class="modal-kicker">PLAYFIELD UNAVAILABLE</p><h2 class="modal-title">3D graphics needed</h2><p class="modal-text">Enable hardware acceleration in your browser or open the game in a browser with WebGL 2 support.</p><div class="modal-actions">${button('lobby', 'BACK TO ARCADE', true)}</div>`,
     )
   } finally {
-    loading = false
-    $('start').disabled = false
+    if (request === launchId) {
+      loading = false
+      $('start').disabled = false
+    }
   }
 }
 function pause() {
   if (cabinet) {
     if (cabinet.canControl && cabinet.state.phase === 'playing') {
+      pressed.clear()
       cabinet.keys(0)
       cabinet.send('pause')
     }
@@ -213,6 +227,9 @@ function resume() {
   viewport.focus({ preventScroll: true })
 }
 function toLobby() {
+  launchId++
+  loading = false
+  $('start').disabled = false
   $('menu-notice').textContent = ''
   commitBest()
   if (cabinet) {
@@ -274,7 +291,13 @@ function inputs() {
       down: has('ArrowDown') || (solo && has('KeyS')),
       jump: has('Space') || (solo && has('KeyF')),
     },
-    { left: has('KeyA'), right: has('KeyD'), up: has('KeyW'), down: has('KeyS'), jump: has('KeyF') },
+    {
+      left: has('KeyA'),
+      right: has('KeyD'),
+      up: has('KeyW'),
+      down: has('KeyS'),
+      jump: has('KeyF'),
+    },
   ]
 }
 function frame(now) {
@@ -364,6 +387,7 @@ body.addEventListener('click', (e) => {
       cabinet?.send('play')
     },
     'copy-invite': copyInvite,
+    reload: () => location.reload(),
     resume,
     help,
     'close-help': closeHelp,
@@ -393,6 +417,11 @@ const gameKeys = new Set([
   'KeyF',
 ])
 window.addEventListener('keydown', (e) => {
+  // A held key from the previous turn or dialog needs a new press to act again.
+  if (e.repeat && !pressed.has(e.code) && (gameKeys.has(e.code) || e.code === 'Enter')) {
+    e.preventDefault()
+    return
+  }
   if (mode === 'pause' && e.code === 'KeyP' && !e.repeat) {
     e.preventDefault()
     resume()
@@ -400,7 +429,16 @@ window.addEventListener('keydown', (e) => {
   }
   if (mode === 'lan') {
     if (e.metaKey || e.ctrlKey || e.altKey || !cabinet?.canControl) return
-    if ((e.code === 'KeyP' || e.code === 'Escape') && !modal.open && cabinet.state.phase === 'playing') {
+    if ((e.code === 'KeyP' || e.code === 'Escape') && cabinet.state.phase === 'paused') {
+      e.preventDefault()
+      if (!e.repeat) cabinet.send('play')
+      return
+    }
+    if (
+      (e.code === 'KeyP' || e.code === 'Escape') &&
+      !modal.open &&
+      cabinet.state.phase === 'playing'
+    ) {
       e.preventDefault()
       if (!e.repeat) pause()
       return
@@ -430,10 +468,6 @@ window.addEventListener('keyup', (e) => {
 })
 function releaseControls() {
   pressed.clear()
-  if (cabinet?.mode === 'coop') {
-    sendKeys()
-    return
-  }
   pause()
 }
 window.addEventListener('blur', releaseControls)
@@ -469,12 +503,15 @@ $('lan-start').addEventListener('click', () => joinLan('turns'))
 $('lan-coop').addEventListener('click', () => joinLan('coop'))
 $('lan-leave').addEventListener('click', toLobby)
 const linkedMode = new URLSearchParams(location.search).get('lan')
-if (linkedMode === 'coop' || linkedMode === '1') joinLan(linkedMode === 'coop' ? 'coop' : 'turns', false)
+if (linkedMode === 'coop' || linkedMode === '1')
+  joinLan(linkedMode === 'coop' ? 'coop' : 'turns', false)
 
 function sendKeys() {
   if (!cabinet) return
   const k = inputs()[0]
-  cabinet.keys((k.left ? 1 : 0) | (k.right ? 2 : 0) | (k.up ? 4 : 0) | (k.down ? 8 : 0) | (k.jump ? 16 : 0))
+  cabinet.keys(
+    (k.left ? 1 : 0) | (k.right ? 2 : 0) | (k.up ? 4 : 0) | (k.down ? 8 : 0) | (k.jump ? 16 : 0),
+  )
 }
 async function joinLan(networkMode, fresh = true) {
   if (cabinet || loading || mode !== 'lobby') return
@@ -482,7 +519,17 @@ async function joinLan(networkMode, fresh = true) {
   mode = 'lan'
   $('menu-notice').textContent = ''
   pressed.clear()
-  const session = new Cabinet(stage, networkMode, receiveLan, lanStatus, fresh)
+  const session = new Cabinet(
+    stage,
+    networkMode,
+    (state) => {
+      if (cabinet === session) receiveLan(state)
+    },
+    (status) => {
+      if (cabinet === session) lanStatus(status)
+    },
+    fresh,
+  )
   cabinet = session
   const url = new URL(location.href)
   url.searchParams.set('lan', networkMode === 'coop' ? 'coop' : '1')
@@ -498,6 +545,13 @@ async function joinLan(networkMode, fresh = true) {
   }
 }
 function lanStatus(status) {
+  if (status === 'updated') {
+    music(false)
+    showDialog(
+      `<p class="modal-kicker">LAN ARCADE</p><h2 class="modal-title">Game updated</h2><p class="modal-text">Reload this page to use the latest game, then choose a mode.</p><div class="modal-actions">${button('reload', 'RELOAD GAME', true)}${button('lobby', 'MAIN MENU')}</div>`,
+    )
+    return
+  }
   if (status === 'partner-left' || status === 'expired') {
     toLobby()
     $('menu-notice').textContent =
@@ -514,7 +568,7 @@ function lanStatus(status) {
     connecting: ['Joining the cabinet', 'Connecting to the local arcade host.'],
     disconnected: [
       'Reconnecting…',
-      'The host is unreachable. Keep this tab open to reclaim your seat. Start the host on the game computer with <code>npm run lan</code>.',
+      'The game computer is unreachable. Keep this tab open to reconnect to the paused game.',
     ],
     full: ['Cabinet occupied', 'Both seats are taken. Join again when a player leaves.'],
     replaced: ['Seat reopened', 'This seat is now connected in another tab.'],
@@ -531,13 +585,14 @@ function receiveLan(state) {
     mine = cabinet.canControl,
     board = state.board
   if (board) {
-    const key = cabinet.mode + '-' + state.stage + '-' + active
+    const key = state.match + '-' + cabinet.mode + '-' + state.stage + '-' + active
     const rebuild = key !== lanView
     if (rebuild) {
       run = new Run(state.stage, board.players.length)
       if (!coop) run.seat = active
     }
     Object.assign(run, {
+      state: board.outcome,
       time: board.time,
       score: board.score,
       sinceThrow: board.sinceThrow,
@@ -582,7 +637,9 @@ function receiveLan(state) {
       : mine
         ? 'Ring the summit bell'
         : 'Live view · P' + (active + 1) + ' is climbing'
-    $('game-keys').textContent = mine ? '← → MOVE  ·  ↑ ↓ CLIMB  ·  SPACE JUMP' : 'YOU ARE P' + (own + 1)
+    $('game-keys').textContent = mine
+      ? 'ARROWS + SPACE  ·  OR WASD + F  ·  ESC PAUSE'
+      : 'YOU ARE P' + (own + 1)
     $('pause').disabled = !mine
     $('lan-leave').hidden = false
     $('touch-controls').hidden = !mine
@@ -601,7 +658,12 @@ function receiveLan(state) {
     music(audioKey !== '', state.stage)
   }
   for (const kind of state.events) sfx(kind)
-  const screen = [state.turn, state.phase, active, state.seats.map((s) => s.connected).join(',')].join(':')
+  const screen = [
+    state.turn,
+    state.phase,
+    active,
+    state.seats.map((s) => s.connected).join(','),
+  ].join(':')
   if (screen === lanScreen) return
   lanScreen = screen
   pressed.clear()
@@ -647,7 +709,7 @@ function receiveLan(state) {
         ? 'Stage clear!'
         : 'Ready to climb together?'
     text = paused
-      ? 'Either player can resume the climb.'
+      ? (state.notice ? state.notice + ' ' : '') + 'Either player can resume the climb.'
       : 'You are P' +
         (own + 1) +
         '. Use the arrow keys to move and climb, and Space to jump. You’ll see both climbers on both screens.'
@@ -676,7 +738,9 @@ function receiveLan(state) {
     extra =
       '<div class="lan-scores">' +
       state.seats
-        .map((s, i) => `<span>P${i + 1} <b>${pad(s.score, 6)}</b> · STAGE ${pad(s.stage + 1)}</span>`)
+        .map(
+          (s, i) => `<span>P${i + 1} <b>${pad(s.score, 6)}</b> · STAGE ${pad(s.stage + 1)}</span>`,
+        )
         .join('') +
       '</div>'
   }

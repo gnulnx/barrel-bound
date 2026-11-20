@@ -57,27 +57,35 @@ test('all shortcut ladders are climbable from their actual world coordinates', (
 test('only the active seat moves, hit swaps turns, and stale input cannot carry over', () => {
   const t = new Table()
   t.start()
-  t.command(1, { type: 'play', turn: t.turn })
+  t.command(1, { type: 'play', match: t.match, turn: t.turn })
   assert.equal(t.phase, 'ready')
-  t.command(0, { type: 'play', turn: t.turn })
+  t.command(0, { type: 'play', match: t.match, turn: t.turn })
   const old = t.turn,
     p = t.runs[0].players[0]
-  t.command(1, { type: 'keys', turn: t.turn, mask: 2 })
+  t.command(1, { type: 'keys', match: t.match, turn: t.turn, mask: 2 })
   const x = p.x
   t.step()
   assert.equal(p.x, x)
-  t.command(0, { type: 'keys', turn: t.turn, mask: 2 })
+  t.command(0, { type: 'keys', match: t.match, turn: t.turn, mask: 2 })
   t.step()
   assert.ok(p.x > x)
-  t.runs[0].barrels.push({ id: 35, x: p.x, y: p.y + 0.39, row: 0, dir: 1, rotation: 0, passed: new Set() })
+  t.runs[0].barrels.push({
+    id: 35,
+    x: p.x,
+    y: p.y + 0.39,
+    row: 0,
+    dir: 1,
+    rotation: 0,
+    passed: new Set(),
+  })
   t.step()
   assert.equal(t.active, 1)
   assert.equal(t.phase, 'ready')
   assert.equal(p.lives, 2)
   const savedTime = t.runs[0].time
-  t.command(1, { type: 'play', turn: old })
+  t.command(1, { type: 'play', match: t.match, turn: old })
   assert.equal(t.phase, 'ready')
-  t.command(1, { type: 'play', turn: t.turn })
+  t.command(1, { type: 'play', match: t.match, turn: t.turn })
   t.step()
   assert.equal(t.runs[0].time, savedTime)
   assert.equal(t.runs[1].time, STEP)
@@ -86,7 +94,7 @@ test('bell advances individual progress; an eliminated player watches through th
   const t = new Table(levels.length - 2)
   t.start()
   function play() {
-    assert.ok(t.command(t.active, { type: 'play', turn: t.turn }))
+    assert.ok(t.command(t.active, { type: 'play', match: t.match, turn: t.turn }))
   }
   function bell() {
     const r = t.runs[t.active],
@@ -122,7 +130,8 @@ test('bell advances individual progress; an eliminated player watches through th
 test('co-op steps both seats together with independent keys, lives and one shared score', () => {
   const table = new Table(0, 'coop')
   table.start()
-  const send = (seat, type, mask) => table.command(seat, { type, mask, turn: table.turn })
+  const send = (seat, type, mask) =>
+    table.command(seat, { type, mask, match: table.match, turn: table.turn })
   send(1, 'play')
   const run = table.runs[0],
     [p1, p2] = run.players,
@@ -148,7 +157,11 @@ test('co-op steps both seats together with independent keys, lives and one share
     [0, 3],
   )
   const last = run.level.rows.length - 1
-  Object.assign(p2, { row: last, x: run.level.goalX, y: floorAt(run.level.rows[last], run.level.goalX) })
+  Object.assign(p2, {
+    row: last,
+    x: run.level.goalX,
+    y: floorAt(run.level.rows[last], run.level.goalX),
+  })
   table.step()
   assert.equal(table.phase, 'ready')
   assert.equal(table.runs[0].level.index, 1)
@@ -163,14 +176,14 @@ test('co-op pause clears both inputs; either seat can resume and the team wins t
   const table = new Table(levels.length - 1, 'coop')
   table.start()
   let turn = table.turn
-  table.command(0, { type: 'play', turn })
-  table.command(1, { type: 'keys', turn, mask: 18 })
-  table.command(1, { type: 'pause', turn })
-  table.command(0, { type: 'play', turn })
+  table.command(0, { type: 'play', match: table.match, turn })
+  table.command(1, { type: 'keys', match: table.match, turn, mask: 18 })
+  table.command(1, { type: 'pause', match: table.match, turn })
+  table.command(0, { type: 'play', match: table.match, turn })
   assert.equal(table.phase, 'paused')
   assert.equal(table.snapshot([true, false]).phase, 'offline')
   turn = table.turn
-  table.command(0, { type: 'play', turn })
+  table.command(0, { type: 'play', match: table.match, turn })
   const run = table.runs[0],
     p = run.players[1],
     x = p.x

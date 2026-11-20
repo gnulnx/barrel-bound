@@ -1,5 +1,6 @@
 import { Run, STEP } from '../src/game.js'
 import { levels } from '../src/levels.js'
+import { randomUUID } from 'node:crypto'
 
 const emptyInput = () => ({ left: false, right: false, up: false, down: false, jump: false })
 
@@ -10,6 +11,7 @@ export class Table {
     this.reset(stage)
   }
   reset(stage = 0) {
+    this.match = randomUUID()
     this.stage = stage
     this.runs = []
     this.active = 0
@@ -25,7 +27,9 @@ export class Table {
   }
   start() {
     this.runs =
-      this.mode === 'coop' ? [new Run(this.stage, 2)] : [new Run(this.stage, 1), new Run(this.stage, 1)]
+      this.mode === 'coop'
+        ? [new Run(this.stage, 2)]
+        : [new Run(this.stage, 1), new Run(this.stage, 1)]
     this.active = 0
     this.ready('Both players are here.')
   }
@@ -46,6 +50,7 @@ export class Table {
     if (
       (seat !== 0 && seat !== 1) ||
       (this.mode === 'turns' && seat !== this.active) ||
+      message.match !== this.match ||
       message.turn !== this.turn
     )
       return false
@@ -75,6 +80,7 @@ export class Table {
         down: !!(mask & 8),
         jump: !!(mask & 16),
       }
+      return true
     }
     return false
   }
@@ -85,7 +91,9 @@ export class Table {
     if (this.phase !== 'playing') return
     const seat = this.active,
       run = this.runs[seat]
-    const inputs = this.inputs.map((input, i) => (this.jumpTaps[i] ? { ...input, jump: true } : input))
+    const inputs = this.inputs.map((input, i) =>
+      this.jumpTaps[i] ? { ...input, jump: true } : input,
+    )
     run.step(STEP, this.mode === 'coop' ? inputs : [inputs[seat]])
     this.jumpTaps.fill(false)
     const events = run.events.splice(0)
@@ -132,6 +140,7 @@ export class Table {
     const phase = this.runs.length && !online.every(Boolean) ? 'offline' : this.phase
     return {
       type: 'state',
+      match: this.match,
       mode: this.mode,
       phase,
       turn: this.turn,

@@ -2,12 +2,14 @@
 
 A six-stage Three.js arcade climb. Play solo, share a keyboard, or play on two computers over your home network.
 
+![Two explorers climbing Lantern Falls](docs/gameplay.png)
+
 ## Run locally
 
 Use Node.js 20.19+ or 22.12+ and a browser with WebGL 2.
 
 ```sh
-npm install
+npm ci
 npm start
 ```
 
@@ -15,12 +17,16 @@ The host builds the game and serves it on port 4175. Open **[the title screen](h
 
 ## Two computers on the same network
 
-Start the host with `npm run lan` and open its network address on both computers. Under **Two computers · LAN**, choose the same mode on each screen. You can also open the matching invite link on the second computer. The first player chooses the starting stage.
+Run **one** host with `npm start` (or `npm run lan`). Leave that terminal running. Open the network address printed by that host on both computers; starting a host on each computer creates separate games. Under **Two computers · LAN**, choose the same mode on each screen. The first player chooses the starting stage. Copy the cabinet link from the waiting screen and open it on the other computer to join the matching mode.
 
 - **Climb Together** puts two climbers on the same stage. Either of you can click **Start Co-op** when both have joined. Each keyboard drives its own climber. You share the score, keep separate lives, and either climber can ring the bell. A teammate who runs out of lives rejoins the next stage with one life.
 - **Take Turns** gives each player a separate run. P1 clicks **Start Turn**, and the other player watches live. A lost life or a bell passes control. Each player's stage, lives, checkpoint, and score carry over between turns. The higher score wins.
 
-On either computer, use the arrow keys and Space, or WASD and F. A disconnect pauses the game and reserves that seat for two minutes. Either player can choose **End Game** to release both seats and return both browsers to the main menu. Finishing a match releases the seats immediately and leaves the final score on each screen. A new game starts with fresh lives, scores, hazards and checkpoints. To play alone again, choose **Play Solo**. In a local game, use **Esc → Main Menu → Play Solo**.
+On either computer, use the arrow keys and Space, or WASD and F. Esc or P pauses and resumes; in Take Turns, the active player controls pause and resume. Switching away from the game also pauses it. If controls stop arriving over the network, the host pauses within 1.5 seconds.
+
+A disconnect pauses the game and reserves that seat for two minutes. Reloading the same tab reconnects to the same paused run; resume when both players are back. Progress lives in the running host, so restarting the host ends the match. Either player can choose **End Game** to release both seats and return both browsers to the main menu. Finishing a match releases the seats immediately and leaves the final score on each screen. Selecting a mode for a new game starts with fresh lives, scores, hazards and checkpoints. To play alone again, choose **Play Solo**. In a local game, use **Esc → Main Menu → Play Solo**.
+
+If one screen keeps waiting, check that both computers opened the same host address and selected the same LAN mode. Allow the host through your computer's firewall for your home network. The default port is 4175; set `BARREL_PORT` to choose another. Keep LAN hosting on your trusted home network.
 
 ## Controls
 
@@ -51,6 +57,18 @@ npm run preview
 ```
 
 The finished static game is in `dist/`. Scene geometry, characters, and barrel animation are in `src/world.js`. Movement and collisions are in `src/game.js`, and stage layouts are in `src/levels.js`.
+
+## Checks
+
+```sh
+npm test
+npx playwright install chromium
+npm run test:browser
+```
+
+The Node tests cover the simulation, browser connection lifecycle, and real WebSocket matches. The browser check launches two independent Chromium browsers and exercises solo, shared keyboard, LAN co-op, alternating turns, reloads, pause, end game and results. Screenshots and results go into the ignored `artifacts/browser/` folder. Linux CI uses `npx playwright install --with-deps chromium` to install browser system dependencies as well.
+
+GitHub Actions runs the Node tests and production build on Node 20, 22 and 24, plus the browser check on Node 22. See [the LAN review](docs/LAN_REVIEW.md) for the state lifecycle and regression coverage.
 
 <details>
 <summary>Artwork and generation prompts</summary>

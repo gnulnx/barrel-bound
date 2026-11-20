@@ -1,0 +1,33 @@
+name: Test game and LAN play
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - if: matrix.node == 22
+        run: npx playwright install --with-deps chromium
+      - if: matrix.node == 22
+        run: node scripts/browser-check.mjs
+      - uses: actions/upload-artifact@v4
+        if: failure() && matrix.node == 22
+        with:
+          name: browser-check
+          path: artifacts/browser
