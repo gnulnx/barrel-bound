@@ -7,7 +7,8 @@ function clientFor(t, fresh = true) {
   const originals = Object.fromEntries(
     ['WebSocket', 'location', 'sessionStorage'].map((k) => [k, globalThis[k]]),
   )
-  const storage = new Map(),
+  const clients = [],
+    storage = new Map(),
     sockets = [],
     states = [],
     statuses = []
@@ -43,17 +44,20 @@ function clientFor(t, fresh = true) {
     setItem: (k, value) => storage.set(k, value),
     removeItem: (k) => storage.delete(k),
   }
-  const make = (fresh) =>
-    new Cabinet(
+  const make = (fresh) => {
+    const client = new Cabinet(
       2,
       'coop',
       (s) => states.push(s),
       (s) => statuses.push(s),
       fresh,
     )
+    clients.push(client)
+    return client
+  }
   const client = make(fresh)
   t.after(() => {
-    client.close()
+    for (const client of clients) client.close()
     for (const [k, value] of Object.entries(originals)) {
       if (value === undefined) delete globalThis[k]
       else globalThis[k] = value
@@ -111,7 +115,6 @@ test('leaving during a lost connection remembers cancellation instead of resumin
   sockets[0].close()
   client.close()
   const next = make(false)
-  t.after(() => next.close())
   next.open()
   sockets[1].open()
   assert.equal(sockets[1].sent[0].token, 'token')
